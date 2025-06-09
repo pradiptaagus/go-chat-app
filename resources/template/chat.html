@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+</head>
+
+<body>
+    <h1>Chat</h1>
+    <p>
+        Click "Open" to create a connection to the server, 
+        "Send" to send a message to the server and "Close" to close 
+        the connection. You can change the message and send multiple times.
+    </p>
+    <button id="btn-open">Open</button>
+    <button id="btn-close">Close</button>
+    <form>
+        <input type="text" id="input" value="Hello world">
+        <button id="btn-send">Send</button>
+    </form>
+    <div id="output" style="max-height: 70vh; overflow-y: scroll;"></div>
+
+    <script>
+        let output = document.getElementById("output");
+        let input = document.getElementById("input");
+        let ws;
+
+        function printMessage(message) {
+            const el = document.createElement("p")
+            el.textContent = message;
+            output.appendChild(el);
+            output.scroll(0, output.scrollHeight)
+        }
+
+        function openConnection(event) {
+            event.preventDefault();
+
+            if (ws) {
+                return;
+            }
+
+            ws = new WebSocket("{{.}}");
+            ws.onopen = function(event) {
+                console.log("OPEN: ", event);
+            }
+            ws.onclose = function(event) {
+                console.log("CLOSE: ", event);
+                ws = null;
+            }
+            ws.onmessage = function(event) {
+                console.log("MESSAGE: ", event);
+                printMessage(event.data)
+            }
+            ws.onerror = function(event) {
+                console.log("ERROR: ", event)
+            }
+        }
+
+        document.getElementById("btn-open").addEventListener("click", openConnection);
+
+        function sendMessageHandler(event) {
+            event.preventDefault();
+            
+            if (!ws) {
+                console.log("NO CONNECTION ESTABLISHED");
+                return;
+            }
+
+            let message = input.value;
+            
+
+            console.log("SENDING MESSAGE: ", message)
+            ws.send(input.value)
+        }
+
+        document.getElementById("btn-send").addEventListener("click", sendMessageHandler)
+
+        function closeConnection(event) {
+            event.preventDefault();
+
+            if (!ws) {
+                console.log("NO CONNECTION ESTABLISHED");
+                return;
+            }
+            
+            ws.close()
+            console.log("CONNECTION WAS CLOSED")
+        }
+
+        document.getElementById("btn-close").addEventListener("click", closeConnection)
+    </script>
+</body>
+
+</html>
