@@ -8,7 +8,15 @@ import (
 	"github.com/pradiptaagus/go-chat-app/utils"
 )
 
-var upgrader = websocket.Upgrader{}
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+
+	// Allow all connections
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
