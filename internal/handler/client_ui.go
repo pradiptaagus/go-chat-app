@@ -18,5 +18,5 @@ func ClientUI(w http.ResponseWriter, r *http.Request) {
 
 	t := template.Must(template.ParseFiles(path))
 
-	t.ExecuteTemplate(w, "chat.html", "ws://"+r.Host+"/ws")
+	t.ExecuteTemplate(w, "chat.html", "ws://"+r.Host+"/chat")
 }

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"github.com/pradiptaagus/go-chat-app/internal/service"
 	"github.com/pradiptaagus/go-chat-app/utils"
 )
 
@@ -18,22 +18,32 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func WsHandler(w http.ResponseWriter, r *http.Request) {
+func WsHandler(w http.ResponseWriter, r *http.Request, hub service.Hub) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	utils.PanicIfError(err)
-	defer conn.Close()
+	// defer conn.Close()
 
-	for {
-		msgType, msg, err := conn.ReadMessage()
-		if err != nil {
-			fmt.Printf("read: %s\n", err)
-			break
-		}
+	// Create new client
+	client := service.NewClient(conn, hub)
 
-		err = conn.WriteMessage(msgType, msg)
-		if err != nil {
-			fmt.Printf("write: %s\n", err)
-			break
-		}
-	}
+	// Register client into Hub service
+	client.Register()
+
+	// Run ReadMessage and WriteMessage goroutine for current connection
+	go client.ReadMessage()
+	go client.WriteMessage()
+
+	// for {
+	// 	msgType, msg, err := conn.ReadMessage()
+	// 	if err != nil {
+	// 		fmt.Printf("read: %s\n", err)
+	// 		break
+	// 	}
+
+	// 	err = conn.WriteMessage(msgType, msg)
+	// 	if err != nil {
+	// 		fmt.Printf("write: %s\n", err)
+	// 		break
+	// 	}
+	// }
 }

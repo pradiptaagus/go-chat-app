@@ -1,16 +1,35 @@
-# ✅ Golang Chat Application – Features & Development Phases
+# ✅ Golang Chat Application
+
+# How to Run
+There are two commands to run, client and server. 
+Server will return any message client send. 
+For now, client will send message every second.
+
+```
+// Run server
+go run ./cmd/server/main.go
+
+// Run client (optional)
+// Client will send a message every tick and then a receive message
+go run ./cmd/client/main.go
+```
+After running the server, you can visit chat client interface at [http://localhost:8080](http://localhost:8080).
+try to open the connection first, then start to send a message.
+You can open browser console to see more information about the log.
+
+# Development Roadmap
 
 ## 🟢 Phase 1: Basic CLI Chat App
 - [x] CLI interface for chat
-- [ ] Single server handling multiple clients
-- [ ] Broadcast messages to all users
-- [ ] Use `net` package and Goroutines for concurrency
+- [x] Single server handling multiple clients
+- [x] Broadcast messages to all users
+- [x] Use `net` package and Goroutines for concurrency
 
 ---
 
 ## 🟡 Phase 2: WebSocket Chat App
-- [ ] WebSocket-based real-time messaging
-- [ ] Basic web UI (HTML + JavaScript)
+- [x] WebSocket-based real-time messaging
+- [x] Basic web UI (HTML + JavaScript)
 - [ ] Display user join/leave notifications
 
 ---
@@ -45,18 +64,3 @@
 - [ ] Admin panel for user/room moderation
 - [ ] Emoji and markdown support in messages
 - [ ] Push notifications
-
----
-
-# How to Run
-There are two commands to run, client and server. 
-Server will return any message client send. 
-For now, client will send message every second.
-
-```
-// Run server
-go run ./cmd/server/main.go
-
-// Run client
-go run ./cmd/client/main.go
-```

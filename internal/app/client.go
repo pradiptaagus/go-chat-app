@@ -13,10 +13,13 @@ import (
 	"github.com/pradiptaagus/go-chat-app/utils"
 )
 
+// Client struct as object of client.
+// It will store several properties needed by client.
 type Client struct {
 	Addr url.URL
 }
 
+// A method makes client dialing to server
 func (client *Client) Run() {
 	con, res, err := websocket.DefaultDialer.Dial(client.Addr.String(), nil)
 	utils.PanicIfError(err)
@@ -34,7 +37,7 @@ func (client *Client) Run() {
 			if err != nil {
 				log.Println("read:", err)
 			}
-			log.Printf("Received message: %s\n", msg)
+			fmt.Printf("Received message: %s\n\n", msg)
 		}
 	}()
 
