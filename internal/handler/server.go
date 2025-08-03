@@ -5,7 +5,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pradiptaagus/go-chat-app/internal/service"
-	"github.com/pradiptaagus/go-chat-app/utils"
+	"github.com/pradiptaagus/go-chat-app/pkg/util"
 )
 
 var upgrader = websocket.Upgrader{
@@ -18,10 +18,10 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Handles websokcet requests from the peer
 func WsHandler(w http.ResponseWriter, r *http.Request, hub service.Hub) {
 	conn, err := upgrader.Upgrade(w, r, nil)
-	utils.PanicIfError(err)
-	// defer conn.Close()
+	util.PanicIfError(err)
 
 	// Create new client
 	client := service.NewClient(conn, hub)
@@ -29,21 +29,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request, hub service.Hub) {
 	// Register client into Hub service
 	client.Register()
 
-	// Run ReadMessage and WriteMessage goroutine for current connection
+	// Allow client to read and write message.
 	go client.ReadMessage()
 	go client.WriteMessage()
-
-	// for {
-	// 	msgType, msg, err := conn.ReadMessage()
-	// 	if err != nil {
-	// 		fmt.Printf("read: %s\n", err)
-	// 		break
-	// 	}
-
-	// 	err = conn.WriteMessage(msgType, msg)
-	// 	if err != nil {
-	// 		fmt.Printf("write: %s\n", err)
-	// 		break
-	// 	}
-	// }
 }

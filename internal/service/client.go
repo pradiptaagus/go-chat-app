@@ -9,11 +9,24 @@ import (
 )
 
 type Client interface {
+	// ReadMessage reads messages from the websocket connection.
+	// The application runs ReadMessage for each connected client in the hub.
+	// The application ensures that there is at most one ReadMessage on a connected client in the hub.
 	ReadMessage()
+
+	// WriteMessage write messages from the hub to the websocket connection.
+	// The application runs WriteMessage for each connection.
+	// The application ensures that there is at most one WriteMessage on a connection.
 	WriteMessage()
+
+	// Send message to all connected clients
 	Send(message []byte)
+
+	// Register client to the hub
 	Register()
-	FinalizeSend()
+
+	// Destroy all goroutines related to the current user
+	Destroy()
 }
 
 const (
@@ -41,10 +54,9 @@ type ClientImpl struct {
 	outgoingMsg chan []byte
 }
 
-// ReadMessage reads messages from the websocket connection.
-// The application runs ReadMessage for each connection.
-// The application ensures that there is at most one ReadMessage on a connection.
 func (client *ClientImpl) ReadMessage() {
+	// Unregister user when disconnected.
+	// Typically invoked when got error [websocket.IsUnexpectedCloseError].
 	defer func() {
 		client.hub.Unregister(client)
 		client.conn.Close()
@@ -68,26 +80,31 @@ func (client *ClientImpl) ReadMessage() {
 		// Read message
 		_, msg, err := client.conn.ReadMessage()
 
+		log.Printf("ReadMessage: %v\n", err)
+
 		if err != nil {
-			// If unexpected close error occured, it will break the loop for current client
+
+			// If unexpected close error occured, it will break the loop for current client.
+			// [websocket.IsUnexpectedCloseError] indicates user is disconnected.
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				log.Printf("error: %v\n\n", err)
 			}
 			break
 		}
 
+		log.Printf("Unformatted incoming message: %v\n", string(msg))
+
 		// Trim and replace unwanted characters of the message
 		// It will replace `newLine` character by `space` character.
 		msg = bytes.TrimSpace(bytes.ReplaceAll(msg, newLine, space))
+
+		log.Printf("Formatted incoming message %v\n\n", string(msg))
 
 		// Broadcast message to the clients
 		client.hub.Broadcast(msg)
 	}
 }
 
-// WriteMessage write messages from the hub to the websocket connection.
-// The application runs WriteMessage for each connection.
-// The application ensures that there is at most one WriteMessage on a connection.
 func (client *ClientImpl) WriteMessage() {
 	// Create ticker
 	ticker := time.NewTicker(pingPeriod)
@@ -101,20 +118,24 @@ func (client *ClientImpl) WriteMessage() {
 		select {
 		// Read outgoing message
 		case msg, ok := <-client.outgoingMsg:
+			log.Printf("WriteMessage: %s, status: %t\n\n", msg, ok)
 			if !ok {
 				// Write close message when failed to get outgoingMsg channel
 				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
 			}
 
 			// Write outgoing message from outgoindMsg channel
 			err := client.conn.WriteMessage(websocket.TextMessage, msg)
 			if err != nil {
+				log.Printf("WriteMessage error: %v", err)
 				return
 			}
 
 		// Run loop every tick time
 		case <-ticker.C:
 			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("WriteMessage ticker error: %v", err)
 				return
 			}
 		}
@@ -129,11 +150,12 @@ func (client *ClientImpl) Register() {
 	client.hub.Register(client)
 }
 
-func (client *ClientImpl) FinalizeSend() {
+func (client *ClientImpl) Destroy() {
 	close(client.outgoingMsg)
 }
 
-func NewClient(conn *websocket.Conn, hub Hub) *ClientImpl {
+// return a new [Client]
+func NewClient(conn *websocket.Conn, hub Hub) Client {
 	return &ClientImpl{
 		hub:         hub,
 		conn:        conn,

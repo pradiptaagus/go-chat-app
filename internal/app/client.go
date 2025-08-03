@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pradiptaagus/go-chat-app/utils"
+	"github.com/pradiptaagus/go-chat-app/pkg/util"
 )
 
 // Client struct as object of client.
@@ -22,7 +22,7 @@ type Client struct {
 // A method makes client dialing to server
 func (client *Client) Run() {
 	con, res, err := websocket.DefaultDialer.Dial(client.Addr.String(), nil)
-	utils.PanicIfError(err)
+	util.PanicIfError(err)
 	log.Println("dial:", res)
 	defer con.Close()
 

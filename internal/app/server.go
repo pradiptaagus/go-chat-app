@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/pradiptaagus/go-chat-app/internal/router"
-	"github.com/pradiptaagus/go-chat-app/utils"
+	"github.com/pradiptaagus/go-chat-app/pkg/util"
 )
 
 func NewServer() {
@@ -16,5 +16,5 @@ func NewServer() {
 	}
 
 	err := server.ListenAndServe()
-	utils.PanicIfError(err)
+	util.PanicIfError(err)
 }
