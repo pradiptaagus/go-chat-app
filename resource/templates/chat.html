@@ -27,6 +27,9 @@
         let input = document.getElementById("input");
         let ws;
 
+        // Set reconnect interval to 5 miliseconds
+        let reconnectInterval = 5000 
+
         function printMessage(message) {
             const el = document.createElement("p")
             el.textContent = message;
@@ -48,6 +51,11 @@
             ws.onclose = function(event) {
                 console.log("CLOSE: ", event);
                 ws = null;
+
+                // Attemp to reconnect when connection is closed
+                setTimeout(() => {
+                    openConnection(event);
+                }, reconnectInterval);
             }
             ws.onmessage = function(event) {
                 console.log("MESSAGE: ", event);

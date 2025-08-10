@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -9,17 +10,21 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
+	// Set size of internal read buffer I/O
+	ReadBufferSize: 1024,
+
+	// Set size of internal write buffer I/O
 	WriteBufferSize: 1024,
 
-	// Allow all connections
+	// Set allowed origins for the websocket connection.
+	// For now, allow all connections from any origins
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
 // Handles websokcet requests from the peer
-func WsHandler(w http.ResponseWriter, r *http.Request, hub service.Hub) {
+func WsHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, hub service.Hub) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	util.PanicIfError(err)
 
@@ -27,9 +32,9 @@ func WsHandler(w http.ResponseWriter, r *http.Request, hub service.Hub) {
 	client := service.NewClient(conn, hub)
 
 	// Register client into Hub service
-	client.Register()
+	client.Register(ctx)
 
 	// Allow client to read and write message.
-	go client.ReadMessage()
-	go client.WriteMessage()
+	go client.ReadMessage(ctx)
+	go client.WriteMessage(ctx)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"time"
 
@@ -12,21 +13,21 @@ type Client interface {
 	// ReadMessage reads messages from the websocket connection.
 	// The application runs ReadMessage for each connected client in the hub.
 	// The application ensures that there is at most one ReadMessage on a connected client in the hub.
-	ReadMessage()
+	ReadMessage(ctx context.Context)
 
 	// WriteMessage write messages from the hub to the websocket connection.
 	// The application runs WriteMessage for each connection.
 	// The application ensures that there is at most one WriteMessage on a connection.
-	WriteMessage()
+	WriteMessage(ctx context.Context)
 
 	// Send message to all connected clients
-	Send(message []byte)
+	Send(ctx context.Context, message []byte)
 
 	// Register client to the hub
-	Register()
+	Register(ctx context.Context)
 
 	// Destroy all goroutines related to the current user
-	Destroy()
+	Destroy(ctx context.Context)
 }
 
 const (
@@ -40,7 +41,10 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 512
+	// For now, it would be 1MB. It can be adjusted based on the possible message size.
+	// This is used to prevent DoS attack by sending large messages.
+	// The application will close the connection if the message size exceeds this limit.
+	maxMessageSize = 1024 * 1024
 )
 
 var (
@@ -54,11 +58,11 @@ type ClientImpl struct {
 	outgoingMsg chan []byte
 }
 
-func (client *ClientImpl) ReadMessage() {
+func (client *ClientImpl) ReadMessage(ctx context.Context) {
 	// Unregister user when disconnected.
 	// Typically invoked when got error [websocket.IsUnexpectedCloseError].
 	defer func() {
-		client.hub.Unregister(client)
+		client.hub.Unregister(ctx, client)
 		client.conn.Close()
 	}()
 
@@ -69,9 +73,10 @@ func (client *ClientImpl) ReadMessage() {
 	client.conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	// If the server doesn't get a Pong within `pongWait` time, it will assume the connection is dead and close it.
-	// to handle this, set SetPongHandler callback that is triggered when a Pong message is received.
-	// It's typically used to keep connections alive by resetting read deadlines after heartbeats.
+	// To handle this condition, set `SetPongHandler` callback which is triggered when a Pong message is received.
+	// It's typically used to keep connections alive by resetting read deadlines after a message received.
 	client.conn.SetPongHandler(func(appData string) error {
+		log.Println("Pong received, resetting read deadline")
 		client.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -80,14 +85,13 @@ func (client *ClientImpl) ReadMessage() {
 		// Read message
 		_, msg, err := client.conn.ReadMessage()
 
-		log.Printf("ReadMessage: %v\n", err)
-
 		if err != nil {
+			log.Printf("ReadMessage Error: %v\n", err)
 
 			// If unexpected close error occured, it will break the loop for current client.
 			// [websocket.IsUnexpectedCloseError] indicates user is disconnected.
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v\n\n", err)
+				log.Printf("error: %v\n", err)
 			}
 			break
 		}
@@ -98,27 +102,42 @@ func (client *ClientImpl) ReadMessage() {
 		// It will replace `newLine` character by `space` character.
 		msg = bytes.TrimSpace(bytes.ReplaceAll(msg, newLine, space))
 
-		log.Printf("Formatted incoming message %v\n\n", string(msg))
+		log.Printf("Formatted incoming message %v\n", string(msg))
 
 		// Broadcast message to the clients
-		client.hub.Broadcast(msg)
+		client.hub.Broadcast(ctx, msg)
 	}
 }
 
-func (client *ClientImpl) WriteMessage() {
-	// Create ticker
+// WriteMessage writes messages to the websocket connection.
+// It reads messages from the outgoingMsg channel and writes them to the connection.
+// It also sends ping messages to the peer to keep the connection alive.
+// If the peer doesn't respond to the ping message within `pongWait` time, it will close the connection.
+// The application will close the connection if it doesn't receive a Pong message.
+func (client *ClientImpl) WriteMessage(ctx context.Context) {
+	// Create ticker to send ping message every `pingPeriod` time.
+	// This will keep the connection alive by sending ping message to the peer.
+	// If the peer doesn't respond to the ping message within `pongWait` time, it will close the connection.
+	// The application will close the connection if it doesn't receive a Pong message
+	// within `pongWait` time.
 	ticker := time.NewTicker(pingPeriod)
+
+	// Close the ticker and connection when the function exits.
 	defer func() {
 		ticker.Stop()
 		client.conn.Close()
 	}()
 
 	for {
-		client.conn.SetWriteDeadline(time.Now().Add(writeWait))
 		select {
+		case <-ctx.Done():
+			log.Printf("WriteMessage was cancelled: %v\n", client)
+			return
+
 		// Read outgoing message
 		case msg, ok := <-client.outgoingMsg:
-			log.Printf("WriteMessage: %s, status: %t\n\n", msg, ok)
+			client.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			log.Printf("WriteMessage: %s, status: %t\n", msg, ok)
 			if !ok {
 				// Write close message when failed to get outgoingMsg channel
 				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -132,8 +151,10 @@ func (client *ClientImpl) WriteMessage() {
 				return
 			}
 
-		// Run loop every tick time
+		// Run loop every tick time to send ping message.
+		// This will send a ping message to the peer to keep the connection alive.
 		case <-ticker.C:
+			client.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("WriteMessage ticker error: %v", err)
 				return
@@ -142,15 +163,29 @@ func (client *ClientImpl) WriteMessage() {
 	}
 }
 
-func (client *ClientImpl) Send(msg []byte) {
-	client.outgoingMsg <- msg
+func (client *ClientImpl) Send(ctx context.Context, msg []byte) {
+	select {
+	case <-ctx.Done():
+		log.Printf("Sending message was cancelled: %s\n", msg)
+		return
+	case client.outgoingMsg <- msg:
+		log.Printf("Message sent: %s\n", msg)
+	}
 }
 
-func (client *ClientImpl) Register() {
-	client.hub.Register(client)
+func (client *ClientImpl) Register(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		log.Printf("Registering client was cancelled: %v\n", client)
+		return
+	default:
+		client.hub.Register(ctx, client)
+		log.Printf("Successfully registered client: %v\n", client)
+	}
+
 }
 
-func (client *ClientImpl) Destroy() {
+func (client *ClientImpl) Destroy(ctx context.Context) {
 	close(client.outgoingMsg)
 }
 

@@ -1,20 +1,23 @@
 package service
 
-import "log"
+import (
+	"context"
+	"log"
+)
 
 // Maintain the set of active clients and broadcast another message to the active clients.
 type Hub interface {
 	// Observe channel value changes to decide the action to be taken.
-	Run()
+	Run(ctx context.Context)
 
 	// Register client by add the client into the channel
-	Register(client Client)
+	Register(ctx context.Context, client Client)
 
 	// Unregister client by delete client in channel if exist
-	Unregister(Client Client)
+	Unregister(ctx context.Context, Client Client)
 
 	// Broadcast message to other connected clients
-	Broadcast(msg []byte)
+	Broadcast(ctx context.Context, msg []byte)
 }
 
 type HubImpl struct {
@@ -44,43 +47,69 @@ func NewHubImpl() Hub {
 	}
 }
 
-func (hub *HubImpl) Run() {
+func (hub *HubImpl) Run(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			log.Println("Hub Run cancelled")
+			return
+
 		// Register connected client
 		case client := <-hub.register:
 			hub.clients[client] = true
-			log.Printf("A new user is connected. Total user %d\n\n", len(hub.clients))
+			log.Printf("A new user is connected. Total user %d\n", len(hub.clients))
 
 		// Unregister client
 		case client := <-hub.unregister:
 			if ok := hub.clients[client]; ok {
 				delete(hub.clients, client)
-				client.Destroy()
-				log.Printf("A user is disconnected. Total user %d\n\n", len(hub.clients))
+				client.Destroy(ctx)
+				log.Printf("A user is disconnected. Total user %d\n", len(hub.clients))
 			}
 
 		// Broadcast message to all clients
 		case msg := <-hub.broadcast:
 			for client := range hub.clients {
-				client.Send(msg)
-				log.Printf("Broadcasted message: %s\n\n", string(msg))
+				select {
+				case <-ctx.Done():
+					log.Println("Broadcast cancelled due to context done")
+					return
+				default:
+					client.Send(ctx, msg)
+					log.Printf("Broadcasted message: %s\n", string(msg))
+				}
+
 			}
 		}
 	}
 }
 
-func (hub *HubImpl) Register(client Client) {
-	hub.register <- client
-	log.Print("Connecting a user\n")
+func (hub *HubImpl) Register(ctx context.Context, client Client) {
+	select {
+	case <-ctx.Done():
+		log.Printf("Registering client was cancelled: %v\n", client)
+		return
+	case hub.register <- client:
+		log.Printf("Successfully registering client: %v\n", client)
+	}
 }
 
-func (hub *HubImpl) Unregister(client Client) {
-	hub.unregister <- client
-	log.Print("Disconnecting a user\n")
+func (hub *HubImpl) Unregister(ctx context.Context, client Client) {
+	select {
+	case <-ctx.Done():
+		log.Printf("Unregistering client was cancelled: %v\n", client)
+		return
+	case hub.unregister <- client:
+		log.Printf("Successfully unregistering client: %v\n", client)
+	}
 }
 
-func (hub *HubImpl) Broadcast(msg []byte) {
-	hub.broadcast <- msg
-	log.Print("A user broadcasting a message\n")
+func (hub *HubImpl) Broadcast(ctx context.Context, msg []byte) {
+	select {
+	case <-ctx.Done():
+		log.Printf("Broadcasting message was cancelled: %s\n", msg)
+		return
+	case hub.broadcast <- msg:
+		log.Printf("Broadcasting message: %s\n", msg)
+	}
 }
