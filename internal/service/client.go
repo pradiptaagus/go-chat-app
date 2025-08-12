@@ -182,11 +182,17 @@ func (client *ClientImpl) Register(ctx context.Context) {
 		client.hub.Register(ctx, client)
 		log.Printf("Successfully registered client: %v\n", client)
 	}
-
 }
 
 func (client *ClientImpl) Destroy(ctx context.Context) {
-	close(client.outgoingMsg)
+	select {
+	case <-ctx.Done():
+		log.Printf("Destroying client was cancelled: %v\n", client)
+		return
+	default:
+		log.Printf("Destroying client: %v\n", client)
+		close(client.outgoingMsg)
+	}
 }
 
 // return a new [Client]

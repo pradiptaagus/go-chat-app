@@ -30,7 +30,7 @@ You can open browser console to see more information about the log.
 ## 🟡 Phase 2: WebSocket Chat App
 - [x] WebSocket-based real-time messaging
 - [x] Basic web UI (HTML + JavaScript)
-- [ ] Display user join/leave notifications
+- [x] Display user join/leave notifications
 
 ---
 
