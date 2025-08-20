@@ -24,17 +24,14 @@ var upgrader = websocket.Upgrader{
 }
 
 // Handles websokcet requests from the peer
-func WsHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, hub service.Hub) {
+func WsHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, chatServer service.ChatServer) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	util.PanicIfError(err)
 
 	// Create new client
-	client := service.NewClient(conn, hub)
-
-	// Register client into Hub service
-	client.Register(ctx)
+	client := service.NewClient(conn, chatServer)
 
 	// Allow client to read and write message.
-	go client.ReadMessage(ctx)
-	go client.WriteMessage(ctx)
+	go client.ReadPump(ctx)
+	go client.WritePump(ctx)
 }

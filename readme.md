@@ -35,7 +35,7 @@ You can open browser console to see more information about the log.
 ---
 
 ## 🟠 Phase 3: Chat Rooms & In-Memory State
-- [ ] Support multiple chat rooms
+- [x] Support multiple chat rooms
 - [ ] Assign usernames or nicknames
 - [ ] Maintain in-memory message history per room
 - [ ] Use router (`gorilla/mux`, `gin`, or `fiber`)

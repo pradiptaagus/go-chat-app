@@ -5,30 +5,66 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat</title>
+    <style>
+        .form-group {
+            display: block;
+            margin-bottom: 16px;
+        }
+        
+        #btn-leave {
+            margin-bottom: 16px;
+        }
+    </style>
 </head>
 
 <body>
     <h1>Chat</h1>
-    <p>
+    <!-- <p>
         Click "Open" to create a connection to the server, 
         "Send" to send a message to the server and "Close" to close 
         the connection. You can change the message and send multiple times.
     </p>
-    <button id="btn-open">Open</button>
-    <button id="btn-close">Close</button>
+    <button id="btn-open">Open</button>-->
+    <button id="btn-leave">Leave Room</button> 
     <form>
-        <input type="text" id="input" value="Hello world">
+        <div class="form-group">
+            <label for="roomId">Room ID:</label>
+            <select id="roomId" name="roomId">
+                <option value="default">Default</option>
+                <option value="room1">Room 1</option>
+                <option value="room2">Room 2</option>
+                <option value="room3">Room 3</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="input">Message:</label>
+            <input type="text" id="input" value="Hello world">
+        </div>
+        
         <button id="btn-send">Send</button>
     </form>
     <div id="output" style="max-height: 70vh; overflow-y: scroll;"></div>
 
     <script>
-        let output = document.getElementById("output");
-        let input = document.getElementById("input");
+        const output = document.getElementById("output");
+        const input = document.getElementById("input");
+        const roomIdInput = document.getElementById("roomId");
         let ws;
 
         // Set reconnect interval to 5 miliseconds
-        let reconnectInterval = 5000 
+        const reconnectInterval = 5000 
+
+        // Initialize Websocket on page loaded
+        document.addEventListener("DOMContentLoaded", function(e) {
+            console.log("DOM fully loaded and parsed");
+            openConnection(e);
+        });
+
+        document.addEventListener("beforeunload", function(e) {
+            e.preventDefault();
+            e.returnValue = '';
+            closeConnection(e);
+        });
 
         function printMessage(message) {
             const el = document.createElement("p")
@@ -66,7 +102,7 @@
             }
         }
 
-        document.getElementById("btn-open").addEventListener("click", openConnection);
+        // document.getElementById("btn-open").addEventListener("click", openConnection);
 
         function sendMessageHandler(event) {
             event.preventDefault();
@@ -76,14 +112,41 @@
                 return;
             }
 
-            let message = input.value;
+            const message = input.value;
+            const roomId = roomIdInput.value;
             
-
-            console.log("SENDING MESSAGE: ", message)
-            ws.send(input.value)
+            const payload = {
+                type: 'message',
+                roomId: roomId,
+                content: message,
+            }
+            const jsonPayload = JSON.stringify(payload);
+            console.log("SENDING MESSAGE: ", jsonPayload)
+            ws.send(jsonPayload);
         }
 
         document.getElementById("btn-send").addEventListener("click", sendMessageHandler)
+
+        function changeRoomHandler(event) {
+            event.preventDefault();
+
+            if (!ws) {
+                console.log("NO CONNECTION ESTABLISHED");
+                return;
+            }
+
+            const roomId = roomIdInput.value;
+            const payload = {
+                type: 'join',
+                roomId: roomId,
+                content: '',
+            }
+            const jsonPayload = JSON.stringify(payload);
+            console.log("CHANGING ROOM: ", jsonPayload)
+            ws.send(jsonPayload);
+        }
+
+        roomIdInput.addEventListener("change", changeRoomHandler)
 
         function closeConnection(event) {
             event.preventDefault();
@@ -97,7 +160,26 @@
             console.log("CONNECTION WAS CLOSED")
         }
 
-        document.getElementById("btn-close").addEventListener("click", closeConnection)
+        function leaveRoomHandler(event) {
+            event.preventDefault();
+
+            if (!ws) {
+                console.log("NO CONNECTION ESTABLISHED");
+                return;
+            }
+
+            const roomId = roomIdInput.value;
+            const payload = {
+                type: 'leave',
+                roomId: roomId,
+                content: '',
+            }
+            const jsonPayload = JSON.stringify(payload);
+            console.log("LEAVING ROOM: ", jsonPayload)
+            ws.send(jsonPayload);
+        }
+
+        document.getElementById("btn-leave").addEventListener("click", leaveRoomHandler)
     </script>
 </body>
 
