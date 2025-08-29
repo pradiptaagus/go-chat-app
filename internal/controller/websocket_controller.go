@@ -1,4 +1,4 @@
-package handler
+package controller
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pradiptaagus/go-chat-app/internal/service"
-	"github.com/pradiptaagus/go-chat-app/pkg/util"
 )
 
 var upgrader = websocket.Upgrader{
@@ -23,15 +22,21 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+type websocketController struct {
+}
+
 // Handles websokcet requests from the peer
-func WsHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, chatServer service.ChatServer) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	util.PanicIfError(err)
+func (ws *websocketController) WsHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, chatServerService service.ChatServerService, websocketService service.WebSocketService) {
+	conn := websocketService.Must(websocketService.CreateWsConn(ctx, w, r))
 
 	// Create new client
-	client := service.NewClient(conn, chatServer)
+	client := service.NewClientService(conn, chatServerService, nil)
 
 	// Allow client to read and write message.
 	go client.ReadPump(ctx)
 	go client.WritePump(ctx)
+}
+
+func NewWebsocketController() *websocketController {
+	return &websocketController{}
 }

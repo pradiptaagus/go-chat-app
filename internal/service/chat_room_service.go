@@ -2,23 +2,28 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"sync"
+
+	"github.com/pradiptaagus/go-chat-app/internal/model/domain"
+	"github.com/pradiptaagus/go-chat-app/pkg/common"
+	"github.com/pradiptaagus/go-chat-app/pkg/util"
 )
 
 // Maintain the set of active clients and broadcast another message to the active clients.
-type ChatRoom interface {
+type ChatRoomService interface {
 	// Observe channel value changes to decide the action to be taken.
 	Run(ctx context.Context)
 
 	// Register client by add the client into the channel
-	Register(ctx context.Context, client Client)
+	Register(ctx context.Context, client *clientServiceImpl)
 
 	// Unregister client by delete client in channel if exist
-	Unregister(ctx context.Context, Client Client)
+	Unregister(ctx context.Context, client *clientServiceImpl)
 
 	// Broadcast message to other connected clients
-	Broadcast(ctx context.Context, msg string)
+	Broadcast(ctx context.Context, msg *common.Message)
 
 	// Stop the chat room gracefully.
 	// It will close all channels and stop the chat room.
@@ -27,23 +32,27 @@ type ChatRoom interface {
 	// It is used to notify the chat server that the chat room is stopped.
 	// The channel is used to wait for the chat room to be stopped before deleting it from the chat server.
 	IsStopped(ctx context.Context) <-chan bool
+
+	GetChatRoom(ctx context.Context) *domain.ChatRoom
 }
 
-type ChatRoomImpl struct {
+type chatRoomServiceImpl struct {
+	*domain.ChatRoom
+
 	// A channel to store connected clients.
-	clients map[Client]bool
+	clients map[int64]*clientServiceImpl
 
 	// A channel to store message to the connected clients.
 	// When channel get new message, it will be broadcasted to all connected clients.
-	broadcast chan string
+	broadcast chan *common.Message
 
-	// A channel to store a new client.
+	// A channel to store a new
 	// The client in register channel will be moved to clients channel.
-	register chan Client
+	register chan *clientServiceImpl
 
 	// A channel to store a client that will be removed.
 	// When a value is emitted by unregister channel, it will remove matched client if exist.
-	unregister chan Client
+	unregister chan *clientServiceImpl
 
 	// A channel to stop the chat room.
 	// When a value is emitted by stop channel, it will close all channels and stop the chat room.
@@ -62,16 +71,17 @@ type ChatRoomImpl struct {
 }
 
 // return a new [ChatRoom]
-func NewChatRoomImpl() ChatRoom {
-	return &ChatRoomImpl{
-		clients:    make(map[Client]bool),
-		broadcast:  make(chan string, 2),
-		register:   make(chan Client),
-		unregister: make(chan Client),
+func NewChatRoomService(chatRoom *domain.ChatRoom) ChatRoomService {
+	return &chatRoomServiceImpl{
+		ChatRoom:   chatRoom,
+		clients:    make(map[int64]*clientServiceImpl),
+		broadcast:  make(chan *common.Message, 2),
+		register:   make(chan *clientServiceImpl),
+		unregister: make(chan *clientServiceImpl),
 	}
 }
 
-func (chatRoom *ChatRoomImpl) Run(ctx context.Context) {
+func (chatRoom *chatRoomServiceImpl) Run(ctx context.Context) {
 	defer func() {
 		log.Println("ChatRoom Run stopped")
 	}()
@@ -85,29 +95,46 @@ func (chatRoom *ChatRoomImpl) Run(ctx context.Context) {
 		// Register connected client
 		case client := <-chatRoom.register:
 			chatRoom.mu.Lock()
-			chatRoom.clients[client] = true
+			chatRoom.clients[client.ID] = client
 			log.Printf("A new user is connected. Total user %d\n", len(chatRoom.clients))
 			chatRoom.mu.Unlock()
-			go chatRoom.Broadcast(ctx, "A new user has joined the chat")
+			go chatRoom.Broadcast(ctx, &common.Message{
+				ID:       util.GenerateRandomID(),
+				Type:     common.MessageTypeText,
+				Content:  "A new user has joined the chat",
+				ClientID: client.ID,
+				RoomID:   chatRoom.ID,
+			})
 
 		// Unregister client
 		case client := <-chatRoom.unregister:
 			chatRoom.mu.Lock()
-			if ok := chatRoom.clients[client]; ok {
-				delete(chatRoom.clients, client)
-				client.Destroy(ctx)
+			if _, ok := chatRoom.clients[client.ID]; ok {
+				delete(chatRoom.clients, client.ID)
+				client.destroy(ctx)
 				log.Printf("A user is disconnected. Total user %d\n", len(chatRoom.clients))
-				go chatRoom.Broadcast(ctx, "A user has left the chat")
+				go chatRoom.Broadcast(ctx, &common.Message{
+					ID:       util.GenerateRandomID(),
+					Type:     common.MessageTypeText,
+					Content:  "A user has left the chat",
+					ClientID: client.ID,
+					RoomID:   chatRoom.ID,
+				})
 			}
 			chatRoom.mu.Unlock()
 
 		// Broadcast message to all clients
 		case msg := <-chatRoom.broadcast:
 			chatRoom.mu.Lock()
-			for client := range chatRoom.clients {
-				go func(c Client, msg string) {
-					client.Send(ctx, msg)
-					log.Printf("Broadcasted message to client %v, message: %s\n", client, string(msg))
+			for _, client := range chatRoom.clients {
+				go func(_client ClientService, msg *common.Message) {
+					client.send(ctx, msg)
+					byteMsg, err := json.Marshal(msg)
+					if err != nil {
+						log.Printf("Error marshalling message: %v", err)
+						return
+					}
+					log.Printf("Broadcasted message to client %v, message: %s\n", _client, string(byteMsg))
 				}(client, msg)
 			}
 			chatRoom.mu.Unlock()
@@ -124,7 +151,7 @@ func (chatRoom *ChatRoomImpl) Run(ctx context.Context) {
 	}
 }
 
-func (chatRoom *ChatRoomImpl) Register(ctx context.Context, client Client) {
+func (chatRoom *chatRoomServiceImpl) Register(ctx context.Context, client *clientServiceImpl) {
 	select {
 	case <-ctx.Done():
 		log.Printf("Registering client was cancelled: %v\n", client)
@@ -134,7 +161,7 @@ func (chatRoom *ChatRoomImpl) Register(ctx context.Context, client Client) {
 	}
 }
 
-func (chatRoom *ChatRoomImpl) Unregister(ctx context.Context, client Client) {
+func (chatRoom *chatRoomServiceImpl) Unregister(ctx context.Context, client *clientServiceImpl) {
 	select {
 	case <-ctx.Done():
 		log.Printf("Unregistering client was cancelled: %v\n", client)
@@ -144,17 +171,17 @@ func (chatRoom *ChatRoomImpl) Unregister(ctx context.Context, client Client) {
 	}
 }
 
-func (chatRoom *ChatRoomImpl) Broadcast(ctx context.Context, msg string) {
+func (chatRoom *chatRoomServiceImpl) Broadcast(ctx context.Context, msg *common.Message) {
 	select {
 	case <-ctx.Done():
-		log.Printf("Broadcasting message was cancelled: %s\n", msg)
+		log.Printf("Broadcasting message was cancelled: %v\n", msg)
 		return
 	case chatRoom.broadcast <- msg:
-		log.Printf("Broadcasting message: %s\n", msg)
+		log.Printf("Broadcasting message: %v\n", msg)
 	}
 }
 
-func (chatRoom *ChatRoomImpl) Stop(ctx context.Context) {
+func (chatRoom *chatRoomServiceImpl) Stop(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		log.Println("Stoping chat room was cancelled")
@@ -165,12 +192,22 @@ func (chatRoom *ChatRoomImpl) Stop(ctx context.Context) {
 	}
 }
 
-func (chatRoom *ChatRoomImpl) IsStopped(ctx context.Context) <-chan bool {
+func (chatRoom *chatRoomServiceImpl) IsStopped(ctx context.Context) <-chan bool {
 	select {
 	case <-ctx.Done():
 		chatRoom.isStopped <- false
 		return chatRoom.isStopped
 	default:
 		return chatRoom.isStopped
+	}
+}
+
+func (chatRoom *chatRoomServiceImpl) GetChatRoom(ctx context.Context) *domain.ChatRoom {
+	select {
+	case <-ctx.Done():
+		log.Println("GetChatRoom was cancelled")
+		return nil
+	default:
+		return chatRoom.ChatRoom
 	}
 }
